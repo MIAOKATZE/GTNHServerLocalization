@@ -3,7 +3,7 @@
 ## 项目信息
 
 **项目名称**：Server Localization  
-**目标版本**：Minecraft 1.7.10 (GTNH 2.8.4)  
+**目标版本**：Minecraft 1.7.10 (GTNH 2.8.x / 2.9.0-beta-x)  
 **原版本**：Minecraft 1.12.2  
 **原仓库**：https://github.com/glitchless/MinecraftServerLocalization
 
@@ -11,11 +11,11 @@
 
 ### 必需工具
 
-- **JDK 8**：编译和运行模组
-  - 推荐：Eclipse Adoptium JDK 8
-  - 下载：https://adoptium.net/temurin/releases/?version=8
+- **JDK 8+**：运行模组需要 Java 8；构建环境支持 Java 8 / Java 17+ / Java 21
+  - 推荐：Eclipse Adoptium JDK 8（运行）或 Eclipse Temurin JDK 21（构建）
+  - 下载：https://adoptium.net/temurin/releases/
   
-- **Gradle 4.4.1**：项目构建工具
+- **Gradle 8.x+**：项目构建工具（通过 GTNH convention 自动管理）
   - 通过 Gradle Wrapper 自动管理
   
 - **Minecraft Forge 1.7.10**：模组加载器
@@ -23,19 +23,20 @@
 
 ### 环境配置
 
-1. 安装 JDK 8 并设置环境变量
+1. 安装 JDK 并设置环境变量
 ```bash
-# Windows
-set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-8.0.482.8-hotspot
+# Linux / macOS
+export JAVA_HOME=/usr/lib/jvm/java-21-temurin
+export PATH=$JAVA_HOME/bin:$PATH
 
-# PowerShell
-$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-8.0.482.8-hotspot'
+# Windows
+set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.6-hotspot
 ```
 
 2. 验证安装
 ```bash
 java -version
-# 应显示：java version "1.8.0_xxx"
+# 应显示：openjdk version "21.0.x" 或 "1.8.0_xxx"
 ```
 
 ## 构建系统
@@ -45,59 +46,49 @@ java -version
 **build.gradle 关键配置**
 
 ```gradle
-version = "1.0"
-group = "ru.glitchless.serverlocalization"
-archivesBaseName = "serverlocalization"
+version = project.modVersion
+group = project.mavenGroup
+archivesBaseName = project.archiveName
 
 sourceCompatibility = targetCompatibility = '1.8'
 
-repositories {
-    mavenCentral()
-    maven {
-        name = "forge"
-        url = "https://maven.minecraftforge.net/"
-    }
-    maven {
-        url = "https://libraries.minecraft.net/"
-    }
-}
-
-dependencies {
-    compile files('libs/forge-1.7.10-10.13.4.1614-1.7.10-universal.jar')
-    compile 'com.google.code.gson:gson:2.8.9'
-    compile 'org.apache.logging.log4j:log4j-api:2.0-beta9'
-    compile 'org.apache.logging.log4j:log4j-core:2.0-beta9'
+minecraft {
+    version = "1.7.10-10.13.4.1614-1.7.10"
 }
 ```
+
+版本号由 Gradle 在构建时注入，并通过生成的 `ru.glitchless.serverlocalization.Tags.VERSION` 在代码中使用。
 
 ### 构建命令
 
 ```bash
 # 清理并构建
-gradlew.bat clean build
+./gradlew clean build
 
 # 仅构建
-gradlew.bat build
+./gradlew build
 
 # 清理
-gradlew.bat clean
+./gradlew clean
 ```
 
-构建产物：`build/libs/serverlocalization-1.0.jar`
+构建产物：`build/libs/serverlocalization-1.1.0.jar`
 
 ## 项目结构
 
 ```
 src/main/java/ru/glitchless/serverlocalization/
 ├── ServerLocalization.java           # 主模组类
+├── Tags.java                         # 由 Gradle 生成的版本信息类（构建时生成）
 ├── config/
 │   └── ServerLocalizationConfig.java # 配置管理
 ├── lang/
 │   ├── ILangChanger.java             # 语言加载器接口
+│   ├── StringTranslateHelper.java    # 统一访问 StringTranslate 的反射助手
 │   ├── VanillaChanger.java           # 原版翻译加载器
 │   ├── OtherModChanger.java          # 模组翻译加载器
 │   ├── TxLoaderChanger.java          # 外部翻译加载器
-│   ├── GTNHLocalization.java         # GregTech 配置文件加载器（新）
+│   ├── GTNHLocalization.java         # GregTech 配置文件加载器
 │   ├── IC2LangChanger.java           # IC2 特殊处理
 │   └── LangNotFoundException.java    # 异常类
 ├── downloader/
@@ -123,67 +114,36 @@ Minecraft 1.7.10 使用混淆的内部类名，需要通过反射动态访问。
 - `field_74817_a`：StringTranslate 实例
 - `field_74816_c`：语言映射 Map<String, String>
 
-**代码示例**：
+所有反射逻辑统一封装在 `StringTranslateHelper` 中：
+
 ```java
-Class<?> stringTranslateClass = Class.forName("net.minecraft.util.StringTranslate");
+// 获取语言映射表
+Map<String, String> languageList = StringTranslateHelper.getLanguageMap(logger);
 
-// 获取实例
-Field instanceField = stringTranslateClass.getDeclaredField("field_74817_a");
-instanceField.setAccessible(true);
-Object stringTranslateInstance = instanceField.get(null);
-
-// 获取语言映射
-Field languageListField = stringTranslateClass.getDeclaredField("field_74816_c");
-languageListField.setAccessible(true);
-Map<String, String> languageList = (Map<String, String>) 
-    languageListField.get(stringTranslateInstance);
+// 注入 Properties
+StringTranslateHelper.injectProperties(properties, logger);
 ```
+
+`StringTranslateHelper` 使用静态内部类实现线程安全的延迟初始化，并缓存反射得到的 `Class`、`Field`，避免每个加载器重复反射。
 
 ### 2. 动态字段发现
 
-为了提高兼容性，实现了动态字段发现机制。
+`StringTranslateHelper` 优先按已知名称查找字段，失败时按类型回退：
 
 ```java
-String[] possibleFieldNames = {
+String[] possibleInstanceFields = {
+    "field_74817_a",    // 主要字段
+    "instance",
+    "theStringTranslate"
+};
+
+String[] possibleLanguageListFields = {
     "field_74816_c",    // 主要字段
     "field_150511_e",   // 备用字段
     "translateTable",   // 未混淆字段名
     "languageList",     // 另一个可能的名字
     "nameToLanguageMap" // 可能的字段名
 };
-
-for (String fieldName : possibleFieldNames) {
-    try {
-        Field f = stringTranslateClass.getDeclaredField(fieldName);
-        f.setAccessible(true);
-        Object value = f.get(stringTranslateInstance);
-        if (value instanceof Map) {
-            languageListField = f;
-            logger.info("Found language map field: " + fieldName);
-            break;
-        }
-    } catch (Exception e) {
-        // 尝试下一个字段名
-    }
-}
-
-// 如果所有已知字段都失败，按类型查找
-if (languageListField == null) {
-    Field[] fields = stringTranslateClass.getDeclaredFields();
-    for (Field f : fields) {
-        f.setAccessible(true);
-        try {
-            Object value = f.get(stringTranslateInstance);
-            if (value instanceof Map) {
-                languageListField = f;
-                logger.info("Found language map field by type: " + f.getName());
-                break;
-            }
-        } catch (Exception e) {
-            // 跳过
-        }
-    }
-}
 ```
 
 ### 3. UTF-8 编码支持
@@ -195,11 +155,8 @@ try (InputStreamReader reader = new InputStreamReader(
         new FileInputStream(langFile), "UTF-8")) {
     Properties properties = new Properties();
     properties.load(reader);
-    
-    // 注入翻译
-    for (String key : properties.stringPropertyNames()) {
-        languageList.put(key, properties.getProperty(key));
-    }
+
+    StringTranslateHelper.injectProperties(properties, logger);
 }
 ```
 
@@ -220,59 +177,41 @@ String[] possiblePaths = {
 };
 ```
 
-### 5. GregTech 配置文件解析
+### 5. 开发环境目录支持
 
-使用正则表达式匹配 GregTech 配置文件的两种格式。
+`OtherModChanger` 同时支持 jar 文件与目录来源（开发环境常见目录来源）：
+
+```java
+if (source.isDirectory()) {
+    return loadLanguageFromDirectory(source, modId, lang, logger);
+} else if (source.getName().endsWith(".jar")) {
+    return loadLanguageFromJar(source, modId, lang, logger);
+}
+```
+
+### 6. GregTech 配置文件解析
+
+使用正则表达式匹配 GregTech 配置文件的多种格式。
 
 **支持格式**：
 1. 带引号格式：`S:"key"=value`
 2. 不带引号格式：`S:key=value`
+3. 兜底格式：`key=value`
 
-**正则表达式**：
-```java
-// 带引号格式
-private static final Pattern CONFIG_PATTERN_QUOTED = 
-    Pattern.compile("^\\s*S:\"([^\"]+)\"=(.*)$");
+**搜索路径**（按优先级）：
+1. `./GregTech_{lang}.lang`
+2. `./config/GTNewHorizons/GregTech_{lang}.lang`
+3. `./config/GregTech_{lang}.lang`
 
-// 不带引号格式
-private static final Pattern CONFIG_PATTERN_UNQUOTED = 
-    Pattern.compile("^\\s*S:([a-zA-Z0-9_.\\-\\[\\]]+)=(.*)$");
-```
+### 7. IC2 特殊处理
 
-**解析逻辑**：
-```java
-// 尝试匹配带引号格式
-Matcher matcherQuoted = CONFIG_PATTERN_QUOTED.matcher(line);
-if (matcherQuoted.matches()) {
-    String key = matcherQuoted.group(1);
-    String value = matcherQuoted.group(2).trim();
-    
-    // 去除大括号（如果有）
-    if (value.startsWith("{") && value.endsWith("}")) {
-        value = value.substring(1, value.length() - 1).trim();
-    }
-    
-    languageList.put(key, value);
-    count++;
-    continue;
-}
+保留 `Loader.isModLoaded("IC2")` 检查，支持以下路径变体：
 
-// 尝试匹配不带引号格式
-Matcher matcherUnquoted = CONFIG_PATTERN_UNQUOTED.matcher(line);
-if (matcherUnquoted.matches()) {
-    String key = matcherUnquoted.group(1);
-    String value = matcherUnquoted.group(2).trim();
-    
-    // 去除大括号（如果有）
-    if (value.startsWith("{") && value.endsWith("}")) {
-        value = value.substring(1, value.length() - 1).trim();
-    }
-    
-    languageList.put(key, value);
-    count++;
-    continue;
-}
-```
+- `/assets/ic2/lang_ic2/{lang}.properties`
+- `/assets/ic2/lang/{lang}.properties`
+- `/assets/ic2/lang/{lang}.lang`
+
+读取失败时记录 ERROR 并优雅跳过。
 
 ## 语言加载器详解
 
@@ -283,44 +222,24 @@ if (matcherUnquoted.matches()) {
 **流程**：
 1. 检查本地是否已存在语言文件
 2. 如不存在，从 Minecraft 官方资源服务器下载
-3. 解析并注入到 StringTranslate
+3. 解析并通过 `StringTranslateHelper` 注入
 
 **文件路径**：`assets/minecraft/lang/zh_CN.lang`
 
-**关键代码**：
-```java
-File assetFile = AssetsHelper.getLangFile(logger, lang);
-try (InputStreamReader reader = new InputStreamReader(
-        new FileInputStream(assetFile), "UTF-8")) {
-    injectLanguage(reader, lang, logger);
-}
-```
-
 ### OtherModChanger（模组翻译）
 
-**功能**：从已加载模组的 jar 文件中提取翻译
+**功能**：从已加载模组的 jar 文件或开发目录中提取翻译
 
 **流程**：
 1. 遍历所有已加载的模组
-2. 打开每个模组的 jar 文件
+2. 打开每个模组的 jar 文件或目录
 3. 查找语言文件（支持多种路径格式）
-4. 解析并注入翻译
+4. 解析并通过 `StringTranslateHelper` 注入翻译
 
 **特殊处理**：
 - 支持模组 ID 大小写变体（IC2NuclearControl → nuclearcontrol）
 - 支持语言代码大小写变体（zh_CN, zh_cn, ZH_CN）
-
-**关键代码**：
-```java
-for (ModContainer container : Loader.instance().getActiveModList()) {
-    File modFile = container.getSource();
-    if (modFile != null && modFile.exists() && 
-        modFile.getName().endsWith(".jar")) {
-        boolean loaded = loadLanguageFromJar(modFile, 
-            container.getModId(), lang, logger);
-    }
-}
-```
+- 单个 mod 加载失败记录日志但继续处理后续 mod
 
 ### TxLoaderChanger（外部翻译）
 
@@ -330,133 +249,26 @@ for (ModContainer container : Loader.instance().getActiveModList()) {
 1. 扫描 `config/txloader/load` 目录
 2. 扫描 `config/txloader/forceload` 目录
 3. 递归查找所有 `.lang` 文件
-4. 解析并注入翻译
-
-**目录结构**：
-```
-config/txloader/load/
-├── modname1/
-│   └── lang/
-│       └── zh_CN.lang
-└── modname2/
-    └── lang/
-        └── zh_CN.lang
-```
-
-**关键代码**：
-```java
-private void findAndLoadLangFiles(File dir, String lang, Logger logger) {
-    File[] files = dir.listFiles();
-    for (File file : files) {
-        if (file.isDirectory()) {
-            findAndLoadLangFiles(file, lang, logger);
-        } else if (file.getName().equalsIgnoreCase(lang + ".lang")) {
-            loadLanguageFile(file, logger);
-        }
-    }
-}
-```
+4. 解析并通过 `StringTranslateHelper` 注入翻译
 
 ### GTNHLocalization（GregTech 配置文件）
 
-**功能**：加载 GregTech 配置文件格式的翻译（新功能）
+**功能**：加载 GregTech 配置文件格式的翻译
 
 **特点**：
-- 专门用于 GregTech 配置文件
-- 支持两种格式：带引号和不带引号
-- 文件放置在服务端根目录
-- 文件命名：`GregTech_{语言代码}.lang`
-
-**流程**：
-1. 读取配置语言（从 ServerLocalizationConfig）
-2. 构建文件名：`GregTech_{lang}.lang`
-3. 在服务端根目录查找文件
-4. 解析并注入翻译
-
-**支持格式**：
-1. 带引号格式：
-   ```
-   S:"Book.How to: Modular Baubles.Name"=模块化饰品手册
-   ```
-
-2. 不带引号格式：
-   ```
-   S:gt.blockmachines.multimachine.supercapacitor.name=兰波顿超级电容库
-   ```
-
-**文件位置**：
-- 相对路径：`./GregTech_zh_CN.lang`
-- 绝对路径：`D:\Desktop\server\GregTech_zh_CN.lang`
-
-**正则表达式**：
-```java
-// 带引号格式
-private static final Pattern CONFIG_PATTERN_QUOTED = 
-    Pattern.compile("^\\s*S:\"([^\"]+)\"=(.*)$");
-
-// 不带引号格式（支持字母、数字、下划线、点号、连字符、方括号）
-private static final Pattern CONFIG_PATTERN_UNQUOTED = 
-    Pattern.compile("^\\s*S:([a-zA-Z0-9_.\\-\\[\\]]+)=(.*)$");
-```
-
-**关键代码**：
-```java
-@Override
-public void changeLanguage(Logger logger, String lang) throws LangNotFoundException {
-    logger.info("GTNHLocalization: Starting to load language " + 
-        lang + " from GregTech config file...");
-    
-    // 构建文件名
-    String fileName = "GregTech_" + lang + ".lang";
-    File configFile = new File(fileName);
-    
-    if (!configFile.exists()) {
-        logger.info("GTNHLocalization: GregTech config file not found: " + 
-            fileName);
-        return;
-    }
-    
-    try {
-        logger.info("GTNHLocalization: Found GregTech config file: " + 
-            configFile.getAbsolutePath());
-        loadConfigFile(configFile, logger);
-    } catch (Exception e) {
-        logger.error("Failed to load GregTech config file: " + 
-            configFile.getAbsolutePath(), e);
-    }
-}
-```
-
-**特殊处理**：
+- 支持多种键格式：带引号、不带引号、纯 key=value
 - 支持 `languagefile { ... }` 块包裹
-- 自动去除大括号
-- UTF-8 编码支持
-- 详细的日志输出
+- 多路径搜索
 
 ### IC2LangChanger（IC2 特殊处理）
 
 **功能**：专门处理 IndustrialCraft 2 的翻译
 
 **特殊处理**：
-- 路径：`/assets/ic2/lang_ic2/`
+- 路径：`/assets/ic2/lang_ic2/`、`/assets/ic2/lang/`
 - 为非标准键添加 "ic2." 前缀
 - 跳过 achievement, itemGroup, death 相关键
-
-**关键代码**：
-```java
-for (Map.Entry<Object, Object> entries : properties.entrySet()) {
-    String newKey = (String) entries.getKey();
-    
-    // 为某些键添加 ic2. 前缀
-    if (!newKey.startsWith("achievement.") &&
-        !newKey.startsWith("itemGroup.") &&
-        !newKey.startsWith("death.")) {
-        newKey = "ic2." + newKey;
-    }
-    
-    languageList.put(newKey, (String) entries.getValue());
-}
-```
+- 读取失败时优雅跳过
 
 ## 配置系统
 
@@ -515,6 +327,7 @@ logger.error("错误消息", exception);
 
 ```java
 logger.info("=== Translation Test ===");
+Map<String, String> languageList = StringTranslateHelper.getLanguageMap(logger);
 logger.info("Total translations in StringTranslate: " + languageList.size());
 
 String[] testKeys = {
@@ -538,7 +351,7 @@ for (String key : testKeys) {
 **症状**：`NoSuchFieldException: field_74816_c`
 
 **解决方案**：
-- 使用动态字段发现机制
+- 使用 `StringTranslateHelper` 统一的动态字段发现机制
 - 按类型查找 Map 字段
 - 添加更多可能的字段名
 
@@ -567,12 +380,12 @@ for (String key : testKeys) {
 
 **可能原因**：
 - 文件名不正确（应为 `GregTech_{语言代码}.lang`）
-- 文件位置不正确（应在服务端根目录）
-- 格式不匹配（检查正则表达式）
+- 文件位置不正确
+- 格式不匹配
 
 **调试步骤**：
 1. 检查文件名是否正确
-2. 检查文件位置是否在服务端根目录
+2. 检查文件位置是否在支持的搜索路径中
 3. 查看日志中的错误信息
 4. 验证文件格式
 
@@ -580,19 +393,19 @@ for (String key : testKeys) {
 
 ### 1. 缓存反射字段
 
-将反射获取的 Field 对象缓存起来，避免重复查找
+`StringTranslateHelper` 将反射获取的 `Field` 对象缓存起来，避免重复查找。
 
 ### 2. 批量注入
 
-一次性注入所有翻译，而不是逐个注入
+一次性注入所有翻译，而不是逐个注入。
 
 ### 3. 延迟加载
 
-仅在需要时加载翻译，而不是在模组初始化时
+`StringTranslateHelper` 使用静态内部类实现首次访问时才初始化反射。
 
 ### 4. 正则表达式优化
 
-预编译正则表达式（已在代码中实现）
+预编译正则表达式（已在代码中实现）。
 
 ## 扩展开发
 
@@ -658,20 +471,16 @@ public void preInit(FMLPreInitializationEvent event) {
 ### 构建发布版本
 
 ```bash
-gradlew.bat clean build
+./gradlew clean build
 ```
 
 ### 版本号管理
 
-在 `build.gradle` 中修改版本号：
-
-```gradle
-version = "1.0.1"
-```
+版本号由 Gradle 注入，代码中通过 `Tags.VERSION` 引用。修改版本号请编辑 `gradle.properties` 或构建配置中的 `modVersion`。
 
 ### 打包
 
-构建产物位于：`build/libs/serverlocalization-1.0.jar`
+构建产物位于：`build/libs/serverlocalization-1.1.0.jar`
 
 ## 参考资料
 

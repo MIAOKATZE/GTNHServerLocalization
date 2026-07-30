@@ -2,13 +2,15 @@
   {
     "modid": "serverlocalization",
     "name": "Server Localization",
-    "description": "Mod for localization server message",
-    "version": "${version}",
-    "mcversion": "${mcversion}",
+    "description": "Server-side localization mod for Minecraft 1.7.10 / GTNH",
+    "version": "${modVersion}",
+    "mcversion": "${minecraftVersion}",
     "url": "",
     "updateUrl": "",
     "authorList": [
-      "LionZXY"
+      "LionZXY",
+      "JiMo258 (1.7.10 port)",
+      "GTNH community maintainers"
     ],
     "credits": "StealthTech for beautiful mod icon",
     "logoFile": "assets/serverlocalization/logo.png",

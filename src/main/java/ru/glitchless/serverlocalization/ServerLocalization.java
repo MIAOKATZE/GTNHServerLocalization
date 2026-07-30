@@ -18,7 +18,10 @@ import java.util.Map;
 public class ServerLocalization {
     public static final String MODID = "serverlocalization";
     public static final String NAME = "Server Localization";
-    public static final String VERSION = "1.0";
+    /**
+     * 版本号由 Gradle 构建时生成的 {@link Tags} 类提供，兼容 GTNH convention。
+     */
+    public static final String VERSION = Tags.VERSION;
 
     public static Logger logger;
     private static List<ILangChanger> langChangerList = new ArrayList<>();
@@ -49,22 +52,14 @@ public class ServerLocalization {
                 logger.error("Failed " + langChanger.getClass().getSimpleName(), ex);
             }
         }
-        
+
         // Test that translations were actually injected
         try {
-            Class<?> stringTranslateClass = Class.forName("net.minecraft.util.StringTranslate");
-            java.lang.reflect.Field instanceField = stringTranslateClass.getDeclaredField("field_74817_a");
-            instanceField.setAccessible(true);
-            Object stringTranslateInstance = instanceField.get(null);
-            
-            java.lang.reflect.Field languageListField = stringTranslateClass.getDeclaredField("field_74816_c");
-            languageListField.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            Map<String, String> languageList = (Map<String, String>) languageListField.get(stringTranslateInstance);
-            
+            Map<String, String> languageList = StringTranslateHelper.getLanguageMap(logger);
+
             logger.info("=== Translation Test ===");
             logger.info("Total translations in StringTranslate: " + languageList.size());
-            
+
             String[] testKeys = {"death.fell.accident.generic", "book.pageIndicator", "entity.LavaSlime.name", "dreamcraft.welcome.welcome"};
             for (String key : testKeys) {
                 String translated = languageList.get(key);

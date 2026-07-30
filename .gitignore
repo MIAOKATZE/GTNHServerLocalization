@@ -1,4 +1,4 @@
-﻿# Compiled class files
+# Compiled class files
 *.class
 
 # Log files
@@ -73,3 +73,6 @@ mods/*.jar
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Agent plans
+/plan/

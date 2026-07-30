@@ -1,0 +1,8 @@
+// Add your dependencies here
+
+dependencies {
+    // No explicit compile-time dependencies are required.
+    // Forge, FML, Log4j and Minecraft are provided by RetroFuturaGradle.
+    // IC2 is detected at runtime via Loader.isModLoaded("IC2") and its
+    // translations are loaded reflectively from the IC2 jar.
+}

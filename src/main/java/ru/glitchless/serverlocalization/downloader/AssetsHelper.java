@@ -31,8 +31,8 @@ public class AssetsHelper {
 
         final Map<String, String> versionsToUrlMap = new HashMap<>();
         // and then, for each version...
-        for (Object object : versions) {
-            JsonObject versionObject = (JsonObject) object;
+        for (JsonElement element : versions) {
+            JsonObject versionObject = element.getAsJsonObject();
             String id = versionObject.get("id").getAsString();
             versionsToUrlMap.put(id, versionObject.get("url").getAsString());
         }
@@ -61,7 +61,7 @@ public class AssetsHelper {
         final JsonObject assets = parser.parse(assetsJson).getAsJsonObject();
         final JsonObject assetsMap = assets.getAsJsonObject("objects");
 
-        logger.info("Found " + assetsMap.size() + " assets");
+        logger.info("Found " + assetsMap.entrySet().size() + " assets");
 
         final Map<String, Asset> toExit = new HashMap<>();
 
