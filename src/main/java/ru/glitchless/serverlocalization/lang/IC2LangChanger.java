@@ -75,9 +75,8 @@ public class IC2LangChanger implements ILangChanger {
         properties.load(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
 
         try {
-            Map<String, String> languageList = StringTranslateHelper.getLanguageMap(logger);
-
-            int count = 0;
+            // 收集后统一走 StringTranslateHelper 注入（含 fallback 表）
+            Map<String, String> collected = new java.util.HashMap<>();
             for (Map.Entry<Object, Object> entries : properties.entrySet()) {
                 Object key = entries.getKey();
                 Object value = entries.getValue();
@@ -91,11 +90,11 @@ public class IC2LangChanger implements ILangChanger {
 
                         newKey = "ic2." + newKey;
                     }
-                    languageList.put(newKey, (String) value);
-                    count++;
+                    collected.put(newKey, (String) value);
                 }
             }
-            logger.info("Injected " + count + " IC2 translations");
+            StringTranslateHelper.injectTranslations(collected, logger);
+            logger.info("Injected " + collected.size() + " IC2 translations");
         } catch (Exception e) {
             logger.error("Failed to inject IC2 language", e);
             throw new IOException(e);

@@ -56,7 +56,8 @@ public class GTNHLocalization implements ILangChanger {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(new FileInputStream(configFile), "UTF-8"))) {
 
-            Map<String, String> languageList = StringTranslateHelper.getLanguageMap(logger);
+            // 收集后统一走 StringTranslateHelper 注入（含 fallback 表）
+            Map<String, String> collected = new java.util.HashMap<>();
 
             String line;
             int count = 0;
@@ -116,11 +117,12 @@ public class GTNHLocalization implements ILangChanger {
                         value = value.substring(1, value.length() - 1).trim();
                     }
 
-                    languageList.put(key, value);
+                    collected.put(key, value);
                     count++;
                 }
             }
 
+            StringTranslateHelper.injectTranslations(collected, logger);
             logger.info("GTNHLocalization: Loaded " + count + " translations from " + configFile.getAbsolutePath());
         }
     }
