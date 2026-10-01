@@ -13,7 +13,7 @@ A Minecraft 1.7.10 server-side mod that lets server administrators set the displ
 
 | GTNH                | Server Localization | Maintenance / 维护 |
 | ------------------- | ------------------- | :----------------: |
-| 2.9.0 beta-1/beta-2 | 1.1.0+              |         ✔️         |
+| 2.9.0               | 1.1.0+              |         ✔️         |
 | 2.8.4               | [1.0](https://github.com/JiMo258/MinecraftServerLocalization-1.7.10) |  原仓库 / Original  |
 
 - Java 8 / Java 17+ / Java 21 均可运行构建产物。
