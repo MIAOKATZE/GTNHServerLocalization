@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.util.Properties;
+import java.util.Map;
 
 public class VanillaChanger implements ILangChanger {
     @Override
@@ -45,22 +45,8 @@ public class VanillaChanger implements ILangChanger {
 
     private void injectLanguage(Reader reader, String lang, Logger logger) {
         try {
-            Properties properties = new Properties();
-
-            // Load properties using the UTF-8 reader
-            properties.load(reader);
-            logger.info("Properties loaded, size: " + properties.size());
-
-            // Log first few properties for debugging
-            int count = 0;
-            for (String key : properties.stringPropertyNames()) {
-                if (count++ < 5) {
-                    logger.info("Example translation: " + key + " = " + properties.getProperty(key));
-                }
-            }
-
-            // Inject all translations into StringTranslate through the shared helper
-            StringTranslateHelper.injectProperties(properties, logger);
+            Map<String, String> translations = LanguageFileReader.read(reader);
+            StringTranslateHelper.injectTranslations(translations, logger);
         } catch (Exception e) {
             logger.error("Failed to inject language", e);
             throw new RuntimeException(e);

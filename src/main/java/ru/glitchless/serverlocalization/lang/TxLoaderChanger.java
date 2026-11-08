@@ -4,9 +4,10 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Properties;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Map;
 
 public class TxLoaderChanger implements ILangChanger {
     private static final String TXLOADER_LOAD_PATH = "config/txloader/load";
@@ -37,6 +38,7 @@ public class TxLoaderChanger implements ILangChanger {
         if (files == null) {
             return;
         }
+        Arrays.sort(files, Comparator.comparing(File::getName));
 
         for (File file : files) {
             if (file.isDirectory()) {
@@ -56,13 +58,12 @@ public class TxLoaderChanger implements ILangChanger {
         try (FileInputStream fis = new FileInputStream(langFile);
              InputStreamReader reader = new InputStreamReader(fis, "UTF-8")) {
 
-            Properties properties = new Properties();
-            properties.load(reader);
+            Map<String, String> translations = LanguageFileReader.read(reader);
 
             // Inject all translations through the shared helper
-            StringTranslateHelper.injectProperties(properties, logger);
+            StringTranslateHelper.injectTranslations(translations, logger);
 
-            logger.info("TxLoaderChanger: Loaded " + properties.size() + " translations from " + langFile.getAbsolutePath());
+            logger.info("TxLoaderChanger: Loaded " + translations.size() + " translations from " + langFile.getAbsolutePath());
         }
     }
 }

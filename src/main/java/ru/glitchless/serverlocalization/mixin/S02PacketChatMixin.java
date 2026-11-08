@@ -1,7 +1,6 @@
 package ru.glitchless.serverlocalization.mixin;
 
 import net.minecraft.network.play.server.S02PacketChat;
-import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IChatComponent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -19,7 +18,7 @@ import ru.glitchless.serverlocalization.config.ServerLocalizationConfig;
  * 与 ServerConfigurationManager.sendChatMsgImpl 的唯一汇聚点，单参构造器亦委托至此）
  * 把翻译组件树解析为 {@code ChatComponentText}，所有客户端无论是否装汉化均收到中文。
  * <p>
- * fail-open：开关关闭 / 根组件非翻译组件 / 解析抛错时保持原组件原样上线，
+ * fail-open：开关关闭 / 解析抛错时保持原组件原样上线，
  * 绝不让聊天包构造崩溃服务器。
  */
 @Mixin(S02PacketChat.class)
@@ -32,9 +31,6 @@ public abstract class S02PacketChatMixin {
     private void serverlocalization$resolveTranslation(IChatComponent component, boolean chat, CallbackInfo ci) {
         try {
             if (!ServerLocalizationConfig.resolveChatTranslations) {
-                return;
-            }
-            if (!(this.field_148919_a instanceof ChatComponentTranslation)) {
                 return;
             }
             IChatComponent resolved = ChatTranslationResolver.resolve(this.field_148919_a);

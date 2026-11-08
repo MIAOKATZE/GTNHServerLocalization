@@ -1,74 +1,82 @@
 package ru.glitchless.serverlocalization.utils;
 
 import javax.annotation.Nullable;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
-/**
- * Http communication utilities
- */
 public final class HttpUtils {
-    /**
-     * Executes a simple HTTP-GET request
-     *
-     * @param url URL to request
-     * @return The result of request
-     * @throws Exception I/O Exception or HTTP errors
-     */
-    public static String httpGet(String url) throws Exception {
-        URL u = new URL(url);
-        HttpURLConnection connection = (HttpURLConnection) u.openConnection();
-        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-        InputStream is = connection.getInputStream();
-        BufferedReader br = new BufferedReader(new InputStreamReader(is));
-        String line;
-        StringBuilder response = new StringBuilder();
-        while ((line = br.readLine()) != null) {
-            response = response.append(line).append('\r');
-        }
-        connection.disconnect();
-        return response.toString();
+    private HttpUtils() {}
+
+    private static HttpURLConnection open(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setConnectTimeout(10000);
+        connection.setReadTimeout(30000);
+        connection.setRequestProperty("User-Agent", "MinecraftServerLocalization/1.7.10");
+        return connection;
     }
 
+    public static String httpGet(String url) throws Exception {
+        HttpURLConnection connection = open(url);
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                response.append(line).append('\n');
+            }
+            return response.toString();
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    /** A failed download must never leave a partial file that the next startup accepts as cached language. */
     @Nullable
     public static File downloadFile(String url, File dest) {
-        URL urlObj;
-        InputStream is = null;
         HttpURLConnection connection = null;
+        Path temporary = null;
         try {
-            dest.getParentFile().mkdirs();
-            dest.createNewFile();
-            urlObj = new URL(url);
-            connection = (HttpURLConnection) urlObj.openConnection();
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
-            is = connection.getInputStream();
-
-            FileOutputStream outputStream = new FileOutputStream(dest);
-            byte[] buffer = new byte[4096];
-            int bytesRead = -1;
-            long totalBytes = 0;
-            while ((bytesRead = is.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-                totalBytes += bytesRead;
+            Path target = dest.toPath().toAbsolutePath();
+            Files.createDirectories(target.getParent());
+            temporary = Files.createTempFile(target.getParent(), ".serverlocalization-", ".tmp");
+            connection = open(url);
+            try (InputStream input = connection.getInputStream()) {
+                long bytes = Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
+                long expected = connection.getContentLengthLong();
+                if (bytes == 0 || (expected >= 0 && bytes != expected)) {
+                    throw new IOException("Incomplete language download: " + bytes + " / " + expected);
+                }
             }
-            outputStream.flush();
-            outputStream.close();
-            System.out.println("[serverlocalization] Downloaded " + totalBytes + " bytes to " + dest.getAbsolutePath());
-            System.out.println("[serverlocalization] Final file size: " + dest.length() + " bytes");
-        } catch (IOException mue) {
-            mue.printStackTrace();
+            try {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return dest;
+        } catch (IOException e) {
+            System.err.println("[serverlocalization] Failed to download language: " + e.getMessage());
             return null;
         } finally {
-            try {
-                if (is != null) is.close();
-            } catch (IOException ioe) {
-                // Ignore
-            }
             if (connection != null) {
                 connection.disconnect();
             }
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                    // A stale temp file is never used as a language cache.
+                }
+            }
         }
-        return dest;
     }
 }
