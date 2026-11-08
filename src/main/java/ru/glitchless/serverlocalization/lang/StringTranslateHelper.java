@@ -325,7 +325,7 @@ public final class StringTranslateHelper {
         return NUMERIC_VARIABLE_PATTERN.matcher(value).replaceAll("%$1s");
     }
 
-    /** Only verified built-in fixes may bypass vanilla normalization to retain numeric precision. */
+    /** Exact-match external overrides bypass vanilla normalization to retain their explicit numeric formats. */
     static void injectPreparedTranslations(Map<String, String> translations, Logger logger) {
         if (translations.isEmpty()) {
             return;

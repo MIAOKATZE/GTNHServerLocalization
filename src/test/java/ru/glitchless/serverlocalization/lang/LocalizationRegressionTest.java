@@ -147,44 +147,159 @@ public final class LocalizationRegressionTest {
         }
     }
 
-    private static void formatCorrections() {
-        Map<String, String> broken = new LinkedHashMap<>();
-        broken.put("commands.network.syphon.success", "从 %s 处成功抽取 %d LP.");
-        broken.put("commands.network.add.success", "为 %s 成功添加 %d LP.");
-        broken.put("commands.soulnetwork.subtract.success", "成功从 %s 的灵魂网络中减去 %dLP !");
-        broken.put("salisarcana:command.forget-aspect.success", "§9成功：§r %s的要素列表中有%d个要素被变更");
-        for (String verb : Arrays.asList("transferred", "received")) {
-            broken.put("GT5U.infodata.wormhole_generator." + verb,
-                    "%s仓（%,dA %s）在最近%d秒内" + (verb.equals("transferred") ? "传输" : "接收")
-                            + "了§b%,d§fEU（相当于%,dA），效率为%.3f%%");
+    private static void formatCorrections() throws Exception {
+        Path root = Files.createTempDirectory("localization-overrides-");
+        try {
+            Path directory = root.resolve("config/serverlocalization/overrides");
+            Map<String, String> broken = new LinkedHashMap<>();
+            broken.put("commands.network.syphon.success", "从 %s 处成功抽取 %d LP.");
+            broken.put("commands.network.add.success", "为 %s 成功添加 %d LP.");
+            broken.put("commands.soulnetwork.subtract.success", "成功从 %s 的灵魂网络中减去 %dLP !");
+            broken.put("salisarcana:command.forget-aspect.success", "§9成功：§r %s的要素列表中有%d个要素被变更");
+            for (String verb : Arrays.asList("transferred", "received")) {
+                broken.put("GT5U.infodata.wormhole_generator." + verb,
+                        "%s仓（%,dA %s）在最近%d秒内" + (verb.equals("transferred") ? "传输" : "接收")
+                                + "了§b%,d§fEU（相当于%,dA），效率为%.3f%%");
+            }
+            Map<String, String> corrected = LanguageFormatCorrections.loadCorrections(directory, "zh_CN", broken, LOGGER);
+            equal(6, corrected.size());
+            Path defaults = directory.resolve("00-defaults.json");
+            check(Files.isRegularFile(defaults), "first directory creation exports bundled defaults");
+            byte[] originalFile = Files.readAllBytes(defaults);
+            Map<String, String> normalized = new LinkedHashMap<>();
+            for (Map.Entry<String, String> entry : broken.entrySet()) {
+                normalized.put(entry.getKey(), StringTranslateHelper.normalizeFormat(entry.getValue()));
+            }
+            equal(corrected, LanguageFormatCorrections.loadCorrections(directory, "ZH_cn", normalized, LOGGER));
+            equal(Collections.emptyMap(), LanguageFormatCorrections.loadCorrections(directory, "en_US", broken, LOGGER));
+            Map<String, String> future = new LinkedHashMap<>(broken);
+            future.put("commands.network.syphon.success", "custom %2$s %1$s");
+            future.remove("commands.network.add.success");
+            Map<String, String> guarded = LanguageFormatCorrections.loadCorrections(directory, "zh_CN", future, LOGGER);
+            check(!guarded.containsKey("commands.network.syphon.success"), "future/user template preserved");
+            check(!guarded.containsKey("commands.network.add.success"), "missing key not invented");
+            check(Arrays.equals(originalFile, Files.readAllBytes(defaults)), "existing defaults never overwritten");
+
+            StringTranslateHelper.injectTranslations(broken, LOGGER);
+            LanguageFormatCorrections.apply("en_US", directory, LOGGER);
+            equal("从 %s 处成功抽取 %s LP.", StatCollector.translateToLocal("commands.network.syphon.success"));
+            long before = StatCollector.getLastTranslationUpdateTimeInMilliseconds();
+            long fallbackBefore = fallbackTimestamp();
+            LanguageFormatCorrections.apply("zh_CN", directory, LOGGER);
+            check(StatCollector.getLastTranslationUpdateTimeInMilliseconds() > before, "override updates main timestamp");
+            check(fallbackTimestamp() > fallbackBefore, "override updates fallback timestamp");
+            equal("从 player 处成功抽取 200 LP.", String.format(StatCollector.translateToLocal(
+                    "commands.network.syphon.success"), 200, "player"));
+            for (String verb : Arrays.asList("transferred", "received")) {
+                String key = "GT5U.infodata.wormhole_generator." + verb;
+                String template = StatCollector.translateToLocal(key);
+                String text = String.format(java.util.Locale.ROOT, template, "输入", 12L, "IV", 1234567L, 34L, 99.12345, 7);
+                check(text.contains("最近7秒"), "indexed seconds");
+                check(text.contains("1,234,567") && text.contains("99.123%"), "numeric precision/grouping");
+                equal(template, StatCollector.translateToFallback(key));
+            }
+            equal(corrected, LanguageFormatCorrections.loadCorrections(directory, "zh_CN", broken, LOGGER));
+            Files.write(defaults, "{\"enabled\":false}".getBytes(StandardCharsets.UTF_8));
+            equal(Collections.emptyMap(), LanguageFormatCorrections.loadCorrections(directory, "zh_CN", broken, LOGGER));
+            equal("{\"enabled\":false}", new String(Files.readAllBytes(defaults), StandardCharsets.UTF_8));
+            Files.delete(defaults);
+            equal(Collections.emptyMap(), LanguageFormatCorrections.loadCorrections(directory, "zh_CN", broken, LOGGER));
+            check(!Files.exists(defaults), "deleted defaults not restored in existing directory");
+            externalRules(root.resolve("user-overrides"));
+        } finally {
+            removeTemporaryTree(root);
         }
-        for (Map.Entry<String, String> entry : broken.entrySet()) {
-            String corrected = LanguageFormatCorrections.correctTemplate(entry.getKey(), entry.getValue());
-            check(!corrected.equals(entry.getValue()), "raw template correction");
-            equal(corrected, LanguageFormatCorrections.correctTemplate(entry.getKey(),
-                    StringTranslateHelper.normalizeFormat(entry.getValue())));
-            equal(corrected, LanguageFormatCorrections.correctTemplate(entry.getKey(), corrected));
-            equal("custom %2$s %1$s", LanguageFormatCorrections.correctTemplate(entry.getKey(), "custom %2$s %1$s"));
-        }
-        StringTranslateHelper.injectTranslations(broken, LOGGER);
-        LanguageFormatCorrections.apply("en_US", LOGGER);
-        equal("从 %s 处成功抽取 %s LP.", StatCollector.translateToLocal("commands.network.syphon.success"));
-        LanguageFormatCorrections.apply("zh_CN", LOGGER);
-        equal("从 player 处成功抽取 200 LP.", String.format(StatCollector.translateToLocal(
-                "commands.network.syphon.success"), 200, "player"));
-        for (String verb : Arrays.asList("transferred", "received")) {
-            String key = "GT5U.infodata.wormhole_generator." + verb;
-            String template = StatCollector.translateToLocal(key);
-            String text = String.format(java.util.Locale.ROOT, template, "输入", 12L, "IV", 1234567L, 34L, 99.12345, 7);
-            check(text.contains("最近7秒"), "indexed seconds");
-            check(text.contains("1,234,567") && text.contains("99.123%"), "numeric precision/grouping");
-            equal(template, StatCollector.translateToFallback(key));
-        }
-        StringTranslateHelper.getLanguageMap(LOGGER).remove("commands.network.add.success");
-        LanguageFormatCorrections.apply("zh_CN", LOGGER);
-        check(!StringTranslateHelper.getLanguageMap(LOGGER).containsKey("commands.network.add.success"), "no invented key");
     }
 
+    private static void externalRules(Path directory) throws Exception {
+        Files.createDirectories(directory);
+        Map<String, String> snapshot = new LinkedHashMap<>();
+        snapshot.put("qa.override", "original %s");
+        snapshot.put("qa.after", "after");
+        equal(Collections.emptyMap(), LanguageFormatCorrections.loadCorrections(directory, "zh_CN", snapshot, LOGGER));
+        check(!Files.exists(directory.resolve("00-defaults.json")), "precreated empty directory remains empty");
+        Files.write(directory.resolve("01-broken.json"), "{".getBytes(StandardCharsets.UTF_8));
+        com.google.gson.JsonObject missingExpected = rule("zh_CN", "qa.override", "original %d", "bad");
+        missingExpected.remove("expected");
+        com.google.gson.JsonObject wrongType = rule("zh_CN", "qa.override", "original %d", "bad");
+        wrongType.addProperty("expected", 1);
+        writeRules(directory.resolve("10-first.json"),
+                rule("zh_CN", "qa.override", "original %d", "first"), missingExpected, wrongType,
+                com.google.gson.JsonNull.INSTANCE,
+                rule("en_US", "qa.override", "original %d", "other locale"),
+                rule("zh_CN", "qa.missing", "original", "invented"),
+                rule("zh_CN", "qa.after", "after", "valid after malformed entries"));
+        writeRules(directory.resolve("99-local.json"),
+                rule("zh_CN", "qa.override", "original %d", "second"),
+                rule("zh_CN", "qa.override", "original %d", "third %1$.3f"));
+        Files.write(directory.resolve("ignored.txt"), "broken".getBytes(StandardCharsets.UTF_8));
+        Files.write(directory.resolve("zz-disabled.json"), "{\"enabled\":false}".getBytes(StandardCharsets.UTF_8));
+        Map<String, String> corrections = LanguageFormatCorrections.loadCorrections(directory, "zh_CN", snapshot, LOGGER);
+        equal("third %1$.3f", corrections.get("qa.override"));
+        equal("valid after malformed entries", corrections.get("qa.after"));
+        equal(2, corrections.size());
+        equal("original %s", snapshot.get("qa.override"));
+        // A new process needs no recompile: loading again reads edits/new files from disk.
+        writeRules(directory.resolve("zzz-added.json"), rule("zh_CN", "qa.override", "original %d", "edited %1$,d"));
+        equal("edited %1$,d", LanguageFormatCorrections.loadCorrections(directory, "zh_CN", snapshot, LOGGER).get("qa.override"));
+        snapshot.put("qa.override", "future upstream repair");
+        check(!LanguageFormatCorrections.loadCorrections(directory, "zh_CN", snapshot, LOGGER).containsKey("qa.override"),
+                "all files guard against future upstream changes");
+        Path clientDirectory = directory.resolve("client-only");
+        SIDE[0] = Side.CLIENT;
+        try {
+            LanguageFormatCorrections.apply("zh_CN", clientDirectory, LOGGER);
+            check(!Files.exists(clientDirectory), "client does not read/export override files");
+        } finally {
+            SIDE[0] = Side.SERVER;
+        }
+    }
+
+    private static com.google.gson.JsonObject rule(String locale, String key, String expected, String replacement) {
+        com.google.gson.JsonObject rule = new com.google.gson.JsonObject();
+        rule.addProperty("locale", locale);
+        rule.addProperty("key", key);
+        rule.addProperty("expected", expected);
+        rule.addProperty("replacement", replacement);
+        return rule;
+    }
+
+    private static void writeRules(Path file, com.google.gson.JsonElement... entries) throws Exception {
+        com.google.gson.JsonArray rules = new com.google.gson.JsonArray();
+        for (com.google.gson.JsonElement entry : entries) {
+            rules.add(entry);
+        }
+        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        root.add("rules", rules);
+        Files.write(file, root.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static long fallbackTimestamp() throws Exception {
+        Map<String, String> fallback = StringTranslateHelper.getFallbackLanguageMap(LOGGER);
+        for (Field translatorField : StatCollector.class.getDeclaredFields()) {
+            if (!java.lang.reflect.Modifier.isStatic(translatorField.getModifiers())
+                    || !translatorField.getType().getSimpleName().equals("StringTranslate")) {
+                continue;
+            }
+            translatorField.setAccessible(true);
+            Object translator = translatorField.get(null);
+            boolean isFallback = false;
+            Field timestamp = null;
+            for (Field field : translator.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                if (Map.class.isAssignableFrom(field.getType()) && field.get(translator) == fallback) {
+                    isFallback = true;
+                }
+                if (field.getType() == long.class && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                    timestamp = field;
+                }
+            }
+            if (isFallback && timestamp != null) {
+                return timestamp.getLong(translator);
+            }
+        }
+        throw new AssertionError("fallback timestamp not found");
+    }
     private static void chatComponents() {
         Map<String, String> templates = new LinkedHashMap<>();
         templates.put("qa.inner", "内:%s");

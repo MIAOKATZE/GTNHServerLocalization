@@ -16,6 +16,8 @@ Windows 下在仓库根目录执行 `.\gradlew.bat build`。`check` 包含 `loca
 - 加载优先级见 README。只读取指定语言，所有资源 namespace 均可包含该语言。
 - Minecraft `.lang` 不使用 Java Properties 解析；IC2 的 `.properties` 保留原语义。
 - 普通注入遵循原版简单数值占位符规范化。已知中文语序错误只匹配坏模板修正，不能按键永久覆盖新翻译。
+- `LanguageFormatCorrections` 在每轮所有加载器之后读取 `config/serverlocalization/overrides/*.json`。默认六条放在 JAR 的 JSON 资源中，仅在首次创建目录时导出；已有目录及文件由服主管理，升级不覆盖。
+- 规则必须提供 locale/key/expected/replacement。文件排序后，以覆盖前的统一语言表快照匹配，后命中者优先；替换走保留原文和数值精度的双表注入。规则加载回归使用临时目录，不写工作区实际 config。
 - 聊天组件解析须保留嵌套文本、兄弟节点、样式、点击和悬浮事件；未知格式失败时保留原组件。
 - 下载设置超时，只在下载完整后替换本地缓存，失败不得留下会被当作有效缓存的空文件。
 
