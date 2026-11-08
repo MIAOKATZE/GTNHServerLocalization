@@ -4,9 +4,11 @@ import cpw.mods.fml.common.FMLCommonHandler;
 import org.apache.logging.log4j.Logger;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 /**
  * 统一访问 Minecraft 1.7.10 {@code net.minecraft.util.StringTranslate} 的工具类。
@@ -23,6 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class StringTranslateHelper {
 
+    // Same contract as Minecraft 1.7.10 StringTranslate.parseLangFile.
+    private static final Pattern NUMERIC_VARIABLE_PATTERN = Pattern.compile("%(\\d+\\$)?[\\d\\.]*[df]");
+
     private StringTranslateHelper() {
         // 静态工具类，禁止实例化
     }
@@ -35,6 +40,7 @@ public final class StringTranslateHelper {
         final Object instance;
         final Field instanceField;
         final Field languageListField;
+        final Field updateTimeField;
         /**
          * FML 在 {@code StatCollector} 上 patch 的 fallback 翻译器实例；
          * GT5U 2.9.0 起会向其 languageList 写入英文，服务器端需同步注入目标语言。
@@ -43,12 +49,13 @@ public final class StringTranslateHelper {
         final Object fallbackInstance;
         final Field fallbackInstanceField;
 
-        ReflectionCache(Class<?> stringTranslateClass, Object instance, Field instanceField, Field languageListField,
+        ReflectionCache(Class<?> stringTranslateClass, Object instance, Field instanceField, Field languageListField, Field updateTimeField,
                 Object fallbackInstance, Field fallbackInstanceField) {
             this.stringTranslateClass = stringTranslateClass;
             this.instance = instance;
             this.instanceField = instanceField;
             this.languageListField = languageListField;
+            this.updateTimeField = updateTimeField;
             this.fallbackInstance = fallbackInstance;
             this.fallbackInstanceField = fallbackInstanceField;
         }
@@ -101,13 +108,27 @@ public final class StringTranslateHelper {
 
         // 3. 获取 FML patch 的 fallback 翻译器（可缺失，不阻断初始化）
         Object fallbackInstance = null;
-        Field fallbackInstanceField = findFallbackTranslatorField(clazz, instance);
-        if (fallbackInstanceField != null) {
-            fallbackInstanceField.setAccessible(true);
-            fallbackInstance = fallbackInstanceField.get(null);
+        Field fallbackInstanceField = null;
+        try {
+            fallbackInstanceField = findFallbackTranslatorField(clazz, instance);
+            if (fallbackInstanceField != null) {
+                fallbackInstanceField.setAccessible(true);
+                fallbackInstance = fallbackInstanceField.get(null);
+            }
+        } catch (Exception ignored) {
+            // Optional fallback reflection must not prevent main-table injection.
+            fallbackInstanceField = null;
         }
 
-        return new ReflectionCache(clazz, instance, instanceField, languageListField, fallbackInstance,
+        Field updateTimeField = null;
+        for (Field field : clazz.getDeclaredFields()) {
+            if (field.getType() == long.class && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                field.setAccessible(true);
+                updateTimeField = field;
+                break;
+            }
+        }
+        return new ReflectionCache(clazz, instance, instanceField, languageListField, updateTimeField, fallbackInstance,
                 fallbackInstanceField);
     }
 
@@ -132,7 +153,7 @@ public final class StringTranslateHelper {
                         && stringTranslateClass.equals(field.getType())) {
                     field.setAccessible(true);
                     Object value = field.get(null);
-                    if (value != null) {
+                    if (value != null && value != mainInstance) {
                         return field;
                     }
                 }
@@ -293,19 +314,54 @@ public final class StringTranslateHelper {
      * @param logger       用于输出日志
      */
     public static void injectTranslations(Map<String, String> translations, Logger logger) {
-        Map<String, String> languageMap = getLanguageMap(logger);
+        Map<String, String> normalized = new HashMap<>();
         for (Map.Entry<String, String> entry : translations.entrySet()) {
-            languageMap.put(entry.getKey(), entry.getValue());
+            normalized.put(entry.getKey(), normalizeFormat(entry.getValue()));
+        }
+        injectPreparedTranslations(normalized, logger);
+    }
+
+    static String normalizeFormat(String value) {
+        return NUMERIC_VARIABLE_PATTERN.matcher(value).replaceAll("%$1s");
+    }
+
+    /** Exact-match external overrides bypass vanilla normalization to retain their explicit numeric formats. */
+    static void injectPreparedTranslations(Map<String, String> translations, Logger logger) {
+        if (translations.isEmpty()) {
+            return;
+        }
+        ReflectionCache cache = getCache();
+        Map<String, String> languageMap = getLanguageMap(logger);
+        synchronized (cache.instance) {
+            languageMap.putAll(translations);
+            updateTimestamp(cache, cache.instance, logger);
         }
         if (logger != null) {
             logger.info("StringTranslateHelper: injected " + translations.size() + " translations");
         }
         Map<String, String> fallbackMap = getFallbackLanguageMap(logger);
         if (fallbackMap != null) {
-            fallbackMap.putAll(translations);
+            synchronized (cache.fallbackInstance) {
+                fallbackMap.putAll(translations);
+                updateTimestamp(cache, cache.fallbackInstance, logger);
+            }
             if (logger != null) {
                 logger.info("StringTranslateHelper: injected " + translations.size()
                         + " translations into fallback table");
+            }
+        }
+    }
+
+    private static void updateTimestamp(ReflectionCache cache, Object instance, Logger logger) {
+        if (cache.updateTimeField == null) {
+            return;
+        }
+        try {
+            long previous = cache.updateTimeField.getLong(instance);
+            cache.updateTimeField.setLong(instance, Math.max(System.currentTimeMillis(), previous + 1));
+        } catch (IllegalAccessException e) {
+            if (logger != null) {
+                logger.warn("Failed to update language table timestamp", e);
             }
         }
     }
@@ -317,26 +373,10 @@ public final class StringTranslateHelper {
      * @param logger     用于输出日志
      */
     public static void injectProperties(Properties properties, Logger logger) {
-        Map<String, String> languageMap = getLanguageMap(logger);
-        int count = 0;
+        Map<String, String> translations = new HashMap<>();
         for (String key : properties.stringPropertyNames()) {
-            languageMap.put(key, properties.getProperty(key));
-            count++;
+            translations.put(key, properties.getProperty(key));
         }
-        if (logger != null) {
-            logger.info("StringTranslateHelper: injected " + count + " translations from properties");
-        }
-        Map<String, String> fallbackMap = getFallbackLanguageMap(logger);
-        if (fallbackMap != null) {
-            int fallbackCount = 0;
-            for (String key : properties.stringPropertyNames()) {
-                fallbackMap.put(key, properties.getProperty(key));
-                fallbackCount++;
-            }
-            if (logger != null) {
-                logger.info("StringTranslateHelper: injected " + fallbackCount
-                        + " translations into fallback table");
-            }
-        }
+        injectTranslations(translations, logger);
     }
 }

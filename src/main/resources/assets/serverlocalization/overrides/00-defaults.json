@@ -1,0 +1,41 @@
+{
+  "enabled": true,
+  "rules": [
+    {
+      "locale": "zh_CN",
+      "key": "commands.network.syphon.success",
+      "expected": "从 %s 处成功抽取 %d LP.",
+      "replacement": "从 %2$s 处成功抽取 %1$s LP."
+    },
+    {
+      "locale": "zh_CN",
+      "key": "commands.network.add.success",
+      "expected": "为 %s 成功添加 %d LP.",
+      "replacement": "为 %2$s 成功添加 %1$s LP."
+    },
+    {
+      "locale": "zh_CN",
+      "key": "commands.soulnetwork.subtract.success",
+      "expected": "成功从 %s 的灵魂网络中减去 %dLP !",
+      "replacement": "成功从 %2$s 的灵魂网络中减去 %1$sLP !"
+    },
+    {
+      "locale": "zh_CN",
+      "key": "salisarcana:command.forget-aspect.success",
+      "expected": "§9成功：§r %s的要素列表中有%d个要素被变更",
+      "replacement": "§9成功：§r %2$s的要素列表中有%1$s个要素被变更"
+    },
+    {
+      "locale": "zh_CN",
+      "key": "GT5U.infodata.wormhole_generator.transferred",
+      "expected": "%s仓（%,dA %s）在最近%d秒内传输了§b%,d§fEU（相当于%,dA），效率为%.3f%%",
+      "replacement": "%1$s仓（%2$,dA %3$s）在最近%7$d秒内传输了§b%4$,d§fEU（相当于%5$,dA），效率为%6$.3f%%"
+    },
+    {
+      "locale": "zh_CN",
+      "key": "GT5U.infodata.wormhole_generator.received",
+      "expected": "%s仓（%,dA %s）在最近%d秒内接收了§b%,d§fEU（相当于%,dA），效率为%.3f%%",
+      "replacement": "%1$s仓（%2$,dA %3$s）在最近%7$d秒内接收了§b%4$,d§fEU（相当于%5$,dA），效率为%6$.3f%%"
+    }
+  ]
+}

@@ -7,8 +7,10 @@ import java.io.File;
 public class ServerLocalizationConfig {
     public static String lang = "zh_CN";
     public static boolean resolveChatTranslations = true;
+    public static File overridesDirectory = new File("config/serverlocalization/overrides");
 
     public static void init(File configFile) {
+        overridesDirectory = new File(configFile.getAbsoluteFile().getParentFile(), "serverlocalization/overrides");
         Configuration config = new Configuration(configFile);
         try {
             config.load();

@@ -73,13 +73,13 @@ public class AssetsHelper {
 
     @Nullable
     public static File getLangFile(Logger logger, String lang) {
-        final String langPath = "minecraft/lang/" + lang.toLowerCase() + ".lang";
+        final String langPath = "minecraft/lang/" + lang.toLowerCase(Locale.ROOT) + ".lang";
         final File assetsFile = ISideProxy.getInstance().getFile("assets/" + langPath);
 
         logger.info("Looking for language file: " + langPath);
         logger.info("Expected file path: " + assetsFile.getAbsolutePath());
 
-        if (assetsFile.exists()) {
+        if (assetsFile.isFile() && assetsFile.length() > 0) {
             logger.info("Language file already exists: " + assetsFile.getAbsolutePath());
             return assetsFile;
         }
@@ -97,7 +97,7 @@ public class AssetsHelper {
         Asset langAsset = assets.get(langPath);
         if (langAsset == null) {
             // Try case-insensitive matching
-            String langLower = lang.toLowerCase();
+            String langLower = lang.toLowerCase(Locale.ROOT);
             logger.info("Exact match failed, trying case-insensitive search for: " + langLower);
             Pattern pattern = Pattern.compile("minecraft/lang/(.+)\\.lang", Pattern.CASE_INSENSITIVE);
             List<String> allLangFile = new ArrayList<>();

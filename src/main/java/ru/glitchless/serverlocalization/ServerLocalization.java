@@ -1,5 +1,6 @@
 package ru.glitchless.serverlocalization;
 
+import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
@@ -14,6 +15,7 @@ import java.util.Map;
 @Mod(modid = ServerLocalization.MODID,
         name = ServerLocalization.NAME,
         version = ServerLocalization.VERSION,
+        dependencies = "before:gregtech",
         acceptableRemoteVersions = "*")
 public class ServerLocalization {
     public static final String MODID = "serverlocalization";
@@ -34,6 +36,9 @@ public class ServerLocalization {
     public void preInit(FMLPreInitializationEvent event) {
         logger = event.getModLog();
         ServerLocalizationConfig.init(event.getSuggestedConfigurationFile());
+        if (!FMLCommonHandler.instance().getSide().isServer()) {
+            return;
+        }
         addLangChanger(new VanillaChanger());
         addLangChanger(new OtherModChanger());
         addLangChanger(new TxLoaderChanger());
@@ -42,13 +47,16 @@ public class ServerLocalization {
 
         // GTNH 2.9.0（GT5U 5.09.54.183+）：GT 系机器在 GT preInit 末注册时急切求值机器名，
         // 且 GTLanguageManager 在 StatCollector.canTranslate 命中时不再覆盖语言表 ——
-        // 必须赶在 GT preInit 之前（GT5U 自排 mod 列表末尾，本 mod preInit 必在其前）
+        // 使用 @Mod 的 before:gregtech 排序约束，赶在 GT preInit 之前
         // 完成注入，机器名等急切求值文本才能拿到目标语言。
         applyLanguageChangers("preInit");
     }
 
     @Mod.EventHandler
     public void postInit(FMLPostInitializationEvent event) {
+        if (!FMLCommonHandler.instance().getSide().isServer()) {
+            return;
+        }
         // preInit 注入后，GT5U preInit/postInit 仍会向语言表写入英文键；
         // postInit 二次幂等注入用于反超覆盖这些后写入的英文。
         applyLanguageChangers("postInit");
@@ -82,9 +90,10 @@ public class ServerLocalization {
             try {
                 logger.info("[" + phase + "] Applying lang for " + langChanger.getClass().getSimpleName());
                 langChanger.changeLanguage(logger, lang);
-            } catch (LangNotFoundException ex) {
+            } catch (Exception ex) {
                 logger.error("[" + phase + "] Failed " + langChanger.getClass().getSimpleName(), ex);
             }
         }
+        LanguageFormatCorrections.apply(lang, logger);
     }
 }

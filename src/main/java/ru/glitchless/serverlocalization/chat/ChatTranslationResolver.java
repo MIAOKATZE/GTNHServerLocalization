@@ -8,179 +8,118 @@ import net.minecraft.util.IChatComponent;
 import net.minecraft.util.StatCollector;
 import ru.glitchless.serverlocalization.lang.StringTranslateHelper;
 
-import java.lang.reflect.Field;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-/**
- * S3 服务器端 {@code ChatComponentTranslation} 解析器：用已注入 zh_CN 的 StringTranslate 主表
- * 把翻译组件树展平为 {@code ChatComponentText}（保留 chatStyle 与兄弟节点），
- * 供 {@code S02PacketChatMixin} 在聊天包构造时调用。
- * <p>
- * 仅用服务端安全方法（{@code getUnformattedText}/{@code createCopy}/{@code createShallowCopy}），
- * 不触碰 {@code getFormattedText} 等客户端专用方法；整个解析可失败回退（模板原样/键名文本），
- * 不向调用方抛出异常。
- */
+/** Resolves translations before packet serialization, preserving component arguments and their styles. */
 public final class ChatTranslationResolver {
+    private static final Pattern STRING_VARIABLE_PATTERN = Pattern.compile("%(?:(\\d+)\\$)?([A-Za-z%]|$)");
 
-    private ChatTranslationResolver() {
-        // 静态工具类，禁止实例化
-    }
-
-    /**
-     * 反射缓存：ChatComponentTranslation 的 key 与 args 私有字段（volatile，
-     * S02PacketChat 构造发生在网络线程）。dev/MCP 名 key/formatArgs，
-     * 生产 SRG 名 field_150716_b/field_150717_c，同一运行时名字固定。
-     */
-    private static volatile Field keyField;
-    private static volatile Field argsField;
+    private ChatTranslationResolver() {}
 
     public static IChatComponent resolve(IChatComponent component) {
-        if (component instanceof ChatComponentTranslation) {
-            return resolveTranslation((ChatComponentTranslation) component);
-        }
-        if (containsTranslation(component)) {
-            return rebuild(component);
-        }
-        return component;
-    }
-
-    /**
-     * 翻译组件：模板查表 + args 展平 + String.format（与 vanilla lang 格式同源），
-     * 包成 ChatComponentText 并套原组件 chatStyle 与兄弟节点。
-     */
-    private static IChatComponent resolveTranslation(ChatComponentTranslation component) {
-        String key = getKey(component);
-        if (key == null) {
-            // 反射拿不到 key：原样返回，不做解析
+        if (component == null || !containsTranslation(component)) {
             return component;
         }
-        Object[] args = getArgs(component);
-
-        String template = lookupTemplate(key);
-        String text;
         try {
-            Object[] processed = new Object[args == null ? 0 : args.length];
-            for (int i = 0; i < processed.length; i++) {
-                processed[i] = resolveArg(args[i]);
-            }
-            text = String.format(template, processed);
-        } catch (Exception e) {
-            // %s 数量与 args 不匹配等：回退模板原样
-            text = template;
+            return resolveTree(component);
+        } catch (RuntimeException e) {
+            // An unknown key or malformed template must retain the original client-side fallback.
+            return component;
         }
+    }
 
-        ChatComponentText result = new ChatComponentText(text);
-        result.setChatStyle(component.getChatStyle().createShallowCopy());
-        for (Object siblingObj : component.getSiblings()) {
-            result.appendSibling(resolve((IChatComponent) siblingObj));
+    private static IChatComponent resolveTree(IChatComponent component) {
+        IChatComponent result;
+        if (component instanceof ChatComponentTranslation) {
+            ChatComponentTranslation translation = (ChatComponentTranslation) component;
+            String template = lookupTemplate(translation.getKey());
+            if (template == null) {
+                return component.createCopy();
+            }
+            result = format(template, translation.getFormatArgs());
+            result.setChatStyle(component.getChatStyle().createShallowCopy());
+        } else {
+            result = component.createCopy();
+            result.getSiblings().clear();
+        }
+        for (Object sibling : component.getSiblings()) {
+            result.appendSibling(resolveTree((IChatComponent) sibling));
         }
         return result;
     }
 
-    /** 模板优先取 StringTranslate 主表（已注入 zh_CN），缺失回退 StatCollector，仍缺则保留键名。 */
+    // Match vanilla's %s / %N$s / %% grammar, retaining component objects instead of flattening their text.
+    private static IChatComponent format(String template, Object[] args) {
+        ChatComponentText result = new ChatComponentText("");
+        Matcher matcher = STRING_VARIABLE_PATTERN.matcher(template);
+        int offset = 0;
+        int nextArg = 0;
+        while (matcher.find()) {
+            appendLiteral(result, template.substring(offset, matcher.start()));
+            String token = matcher.group();
+            if ("%%".equals(token)) {
+                result.appendText("%");
+            } else if ("s".equals(matcher.group(2))) {
+                int index = matcher.group(1) == null ? nextArg++ : Integer.parseInt(matcher.group(1)) - 1;
+                if (index < 0 || index >= args.length) {
+                    throw new IllegalArgumentException("Missing translation argument");
+                }
+                result.appendSibling(resolveArg(args[index]));
+            } else {
+                throw new IllegalArgumentException("Unsupported translation format: " + token);
+            }
+            offset = matcher.end();
+        }
+        appendLiteral(result, template.substring(offset));
+        return result;
+    }
+
+    private static void appendLiteral(IChatComponent result, String literal) {
+        if (!literal.isEmpty()) {
+            // Vanilla validates text between placeholders with String.format as well.
+            result.appendText(String.format(literal));
+        }
+    }
+
     private static String lookupTemplate(String key) {
-        String template = null;
         try {
             Map<String, String> languageMap = StringTranslateHelper.getLanguageMap(null);
-            if (languageMap != null) {
-                template = languageMap.get(key);
+            String template = languageMap.get(key);
+            if (template != null) {
+                return template;
             }
-        } catch (Throwable ignored) {
-            // 反射初始化失败：走 StatCollector 回退
+        } catch (RuntimeException ignored) {
+            // Continue with vanilla if reflection cannot access the table.
         }
-        if (template == null) {
-            String fallback = StatCollector.translateToLocal(key);
-            if (fallback != null && !fallback.equals(key)) {
-                template = fallback;
-            }
-        }
-        return template != null ? template : key;
+        String fallback = StatCollector.translateToLocal(key);
+        return fallback != null && !fallback.equals(key) ? fallback : null;
     }
 
-    /** args 逐个展平为可格式化对象：组件递归解析，实体/物品取显示名，其余字符串化。 */
-    private static Object resolveArg(Object arg) {
+    private static IChatComponent resolveArg(Object arg) {
         if (arg instanceof IChatComponent) {
-            IChatComponent resolved = resolve((IChatComponent) arg);
-            return resolved != null ? resolved.getUnformattedText() : String.valueOf(arg);
+            // Copies are essential: appendSibling changes the argument's style parent.
+            return resolveTree((IChatComponent) arg);
         }
         if (arg instanceof Entity) {
-            return ((Entity) arg).func_145748_c_().getUnformattedText();
+            return resolveTree(((Entity) arg).func_145748_c_());
         }
         if (arg instanceof ItemStack) {
-            return ((ItemStack) arg).getDisplayName();
+            return new ChatComponentText(((ItemStack) arg).getDisplayName());
         }
-        return String.valueOf(arg);
+        return new ChatComponentText(String.valueOf(arg));
     }
 
-    /** 深度检测子树中是否含翻译组件（含兄弟节点的后代）。 */
     private static boolean containsTranslation(IChatComponent component) {
-        if (component == null) {
-            return false;
-        }
         if (component instanceof ChatComponentTranslation) {
             return true;
         }
-        for (Object siblingObj : component.getSiblings()) {
-            if (containsTranslation((IChatComponent) siblingObj)) {
+        for (Object sibling : component.getSiblings()) {
+            if (containsTranslation((IChatComponent) sibling)) {
                 return true;
             }
         }
         return false;
-    }
-
-    /** 非翻译组件但子树含翻译：createCopy 保住本体与 chatStyle，兄弟节点替换为解析后的子树。 */
-    private static IChatComponent rebuild(IChatComponent component) {
-        IChatComponent copy = component.createCopy();
-        copy.getSiblings().clear();
-        for (Object siblingObj : component.getSiblings()) {
-            copy.appendSibling(resolve((IChatComponent) siblingObj));
-        }
-        return copy;
-    }
-
-    private static final String[] KEY_NAMES = { "key", "field_150716_b" };
-    private static final String[] ARGS_NAMES = { "formatArgs", "args", "field_150717_c" };
-
-    /** 读翻译键；名字链覆盖 dev/MCP 与生产 SRG，首次成功后缓存 Field。 */
-    private static String getKey(ChatComponentTranslation component) {
-        if (keyField == null) {
-            keyField = findField(KEY_NAMES);
-            if (keyField == null) {
-                return null;
-            }
-        }
-        try {
-            return (String) keyField.get(component);
-        } catch (IllegalAccessException e) {
-            return null;
-        }
-    }
-
-    /** 读格式化参数；名字链覆盖 dev/MCP 与生产 SRG，首次成功后缓存 Field。 */
-    private static Object[] getArgs(ChatComponentTranslation component) {
-        if (argsField == null) {
-            argsField = findField(ARGS_NAMES);
-            if (argsField == null) {
-                return null;
-            }
-        }
-        try {
-            return (Object[]) argsField.get(component);
-        } catch (IllegalAccessException e) {
-            return null;
-        }
-    }
-
-    private static Field findField(String[] names) {
-        for (String name : names) {
-            try {
-                Field field = ChatComponentTranslation.class.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-                // 继续尝试下一个名字
-            }
-        }
-        return null;
     }
 }
