@@ -1,26 +1,27 @@
-﻿# Server Localization 开发说明
+# Server Localization 开发说明
 
-维护目标是 Minecraft 1.7.10 / Forge 10.13.4.1614 / GTNH 2.9.0 RC。Gradle Wrapper 为 9.4.0，GTNH convention 为 2.0.26，构建 JVM 需要 Java 25 或更新版本；本轮构建和运行测试使用 Java 26。编译产物目标仍为 Java 8。
+维护目标为 Minecraft 1.7.10 / Forge 10.13.4.1614 / GTNH 2.9.0 正式版，源码版本1.3.0。Gradle Wrapper为9.4.0，GTNH convention为2.0.26；既有构建使用Java26，目标字节码仍为Java8。Java21不能启动当前构建插件，构建JVM需Java25或更新版本。
 
 ## 构建与验证
 
-Windows 下在仓库根目录执行 `.\gradlew.bat build`。`check` 包含 `localizationRegressionTest`，使用 Java 26 执行语言解析、注入、格式串和聊天组件回归，不启动 Minecraft 客户端。仅运行此回归可执行 `.\gradlew.bat localizationRegressionTest`。
+在仓库根运行 `.\gradlew.bat build`。`check` 包含 `localizationRegressionTest`，以Java26执行语言加载、格式串、外部规则及聊天组件回归，不启动Minecraft客户端；也可单独执行 `.\gradlew.bat localizationRegressionTest`。
 
-`gradle.properties` 的 `RELEASE_VERSION` 记录交付目标版本；实际构建版本保留 Git Tag、分支和 dirty 信息，仅去掉 Tag 的 `v` 前缀。版本常量由生成的 `Tags.VERSION` 提供，`mcmod.info` 使用相同构建版本。
+`RELEASE_VERSION` 表示目标版本。实际产物使用Git版本信息，由生成的 `Tags.VERSION` 提供并同步到 `mcmod.info`，只去掉Tag的v前缀。只有确认工件版本与来源后才能交付；文档整理不需要改版本或重建JAR。提交、Tag、推送与Release分别按明确授权执行。
 
-提交本轮文件、打 `v<RELEASE_VERSION>` Tag 后，确认 `git status --porcelain` 为空，再执行 `.\gradlew.bat build --no-configuration-cache`。只有此时产生的当前版本、不含 dirty / 分支后缀的运行包才用于交付。常规流程无需 clean，不使用环境变量伪造版本状态。提交、Tag、推送和 Release 按各自授权执行；本地开发分支保持不变，PR 使用远端版本分支。
+已有证据须区分：1.2.1在GTNH2.9.0正式包做过11组有效服务端定向检查，保留初始探针失败及同JVM补验事实；1.3.0已有75项定向断言和构建记录，未重新运行完整整包，未实跑自定义Forge配置根初始化。二者均不证明真实玩家网络往返或所有游戏流程通过。本说明更新没有重新运行这些检查。
 
-## 语言加载约定
+## 语言加载合同
 
-- 服务端执行 preInit / postInit 双阶段注入主表与 fallback 表，客户端保留原生语言选择。
-- 加载优先级见 README。只读取指定语言，所有资源 namespace 均可包含该语言。
-- Minecraft `.lang` 不使用 Java Properties 解析；IC2 的 `.properties` 保留原语义。
-- 普通注入遵循原版简单数值占位符规范化。已知中文语序错误只匹配坏模板修正，不能按键永久覆盖新翻译。
-- `LanguageFormatCorrections` 在每轮所有加载器之后读取 `config/serverlocalization/overrides/*.json`。默认六条放在 JAR 的 JSON 资源中，仅在首次创建目录时导出；已有目录及文件由服主管理，升级不覆盖。
-- 规则必须提供 locale/key/expected/replacement。文件排序后，以覆盖前的统一语言表快照匹配，后命中者优先；替换走保留原文和数值精度的双表注入。规则加载回归使用临时目录，不写工作区实际 config。
-- 聊天组件解析须保留嵌套文本、兄弟节点、样式、点击和悬浮事件；未知格式失败时保留原组件。
-- 下载设置超时，只在下载完整后替换本地缓存，失败不得留下会被当作有效缓存的空文件。
+- 仅物理服务端在preInit/postInit执行加载及覆盖；`before:gregtech` 明确约束注册顺序。preInit服务急切求值，postInit覆盖后写入；不依赖“GT自动排最后”的假设。客户端继续选择自己的语言。
+- 加载顺序及外部规则格式见README。只读取所选语言，不混用其他语言作为兜底；所有资源namespace均可含所选语言。
+- Minecraft `.lang` 按首个等号拆分，不用Java Properties解析；IC2的 `.properties` 保留Properties语义。
+- 统一注入主表及服务端fallback表，更新语言表时间戳。普通注入遵循原版简单数值占位符规范化，不覆盖所有Java格式标志。
+- 覆盖规则在加载器之后执行，以覆盖前的统一快照匹配expected；仅处理当前语言已有键，后命中规则优先。规则替换保留显式参数索引、千分位和精度，作者须核对真实实参。
+- 默认六条规则仅在首次创建规则目录时导出；已有目录和文件由服主管理，升级不覆盖、不补回删除项。重启生效，没有热重载命令。
+- 聊天解析保留嵌套组件、样式、点击和悬浮事件；格式失败保留原组件。下载完整并核对长度后才替换缓存。
 
-玩家反馈包揭示的冠军名称异常发生在实体加入世界事件内；只验证服务器启动不足以证明此问题已修复。原生测试应实际调用 Thaumcraft `EntityUtils.makeChampion` 并检查中文名称，同时分别验证普通 `String.format` 与 `ChatComponentTranslation` 的格式契约。
+## 测试与资料边界
 
-本项目当前没有测试维度实现或 `plan/测试维度指南.md`。临时测试探针和整包运行目录放在 `build/`，不进入发布 JAR；后台运行 nogui 服务端，不操作前台或系统鼠标。
+语言表验证不能替代真实冠军化调用、聊天包或玩家收包验证。规则测试使用临时目录，不向实际配置写入；整包测试使用独立新世界，保留正常停止和恢复证据。
+
+项目没有测试维度。可重建缓存与运行输出可回收；探针源码、必要输入、用户截图和世界分别判断。历史启动脚本默认入口已冻结，不得覆盖旧验收日志。重测须先明确实际依赖、新的隔离运行目录与输出位置，不能直接重放旧路径。

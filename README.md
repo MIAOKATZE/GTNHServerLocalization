@@ -13,11 +13,12 @@ A Minecraft 1.7.10 server-side mod that lets server administrators set the displ
 
 | GTNH                | Server Localization 版本范围 | Maintenance / 维护 |
 | ------------------- | ------------------- | :----------------: |
-| 2.9.0 RC            | 1.3.0 ~ +           |         ✔️         |
+| 2.9.0 正式版        | 1.3.0 ~ +           |         ✔️         |
 | 2.8.4               | [1.0](https://github.com/JiMo258/MinecraftServerLocalization-1.7.10) |  原仓库 / Original  |
 
-- 当前维护目标为 GTNH 2.9.0 RC，运行验证使用 Java 26；产物目标字节码为 Java 8。
+- 当前维护目标为 GTNH 2.9.0 正式版；构建和既有运行验证使用 Java 26，产物目标字节码为 Java 8。
 - 本模组仅在专用服务端注入语言表，不接管客户端的语言选择。无需安装 MIAOKATZE Core。
+- 验证范围：1.2.1 有正式整包服务端定向探针记录；1.3.0 有构建与 75 项定向断言记录，未重跑完整整包、真实客户端往返或自定义 Forge 配置根初始化。历史结果不能代替新工件验收。开发方式见 [开发说明](DEVELOPMENT.md)。
 
 ## Features / 功能特性
 
